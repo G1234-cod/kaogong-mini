@@ -81,6 +81,8 @@ async def login(req: LoginReq, db: DbDep) -> dict:
         # dev 模式（未配 AppSecret）：code 派生稳定伪 openid，便于本地联调
         openid = 'dev-' + hashlib.sha1(req.code.encode()).hexdigest()[:16]
     role = role_of(db, openid)
+    # 登录审计日志（journalctl -u kaogong-api 可查；仅日志不落库，用于白名单录入）
+    print(f'[login] openid={openid} role={role}', flush=True)
     if role == 'user' and not db.get(User, openid):
         db.add(User(openid=openid, role='user'))
         db.commit()
