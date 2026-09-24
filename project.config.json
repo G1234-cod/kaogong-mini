@@ -2,7 +2,7 @@
   "miniprogramRoot": "dist/",
   "projectname": "kaogong-mini",
   "description": "考公小助手 · 微信小程序",
-  "appid": "touristappid",
+  "appid": "wxafd75651e3f7ddd0",
   "compileType": "miniprogram",
   "libVersion": "latest",
   "setting": {

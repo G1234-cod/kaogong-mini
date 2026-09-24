@@ -8,6 +8,7 @@ import React, { createContext, useCallback, useContext, useEffect, useRef, useSt
 import type { AppData } from '../types'
 import type { AuthInfo, DataKey } from '../services/request'
 import { ensureAuth } from '../services/api/auth'
+import { initTransport } from '../services/httpTransport'
 import { fetchSnapshot, flushWriteQueue, op, writeKeys } from '../services/api/data'
 import { buildGuestData } from '../mocks/fixtures'
 import { DEFAULTS, mergeWithDefaults } from './normalize'
@@ -34,6 +35,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     if (bootRef.current) return
     bootRef.current = true
     try {
+      await initTransport() // 后端可达 → 切 httpTransport；否则保留本地 stub 兜底
       const info = await ensureAuth()
       setAuth(info)
       await flushWriteQueue()

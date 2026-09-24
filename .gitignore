@@ -2,5 +2,14 @@ node_modules/
 dist/
 .swc/
 *.local
+
+# 环境变量与密钥（服务器信息/AppSecret/上游 Key 不入库）
+.env
+server/.env
+
+# 后端运行时
+server/venv/
+server/__pycache__/
+server/*.db
 .DS_Store
 npm-debug.log*

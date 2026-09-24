@@ -1,9 +1,9 @@
 // 外部服务代理 API：天气 / 城市搜索 / 一言 / 智能问答
 // 微信小程序 request 合法域名必须 HTTPS + ICP 备案，Open-Meteo / BigDataCloud / 一言均不满足，
-// 因此全部外部请求规划走自建后端（app.gyx-a.cn 已备案）：
-//   GET  /proxy/weather?lat=&lon=   GET /proxy/geocode?q=   GET /proxy/hitokoto
+// 因此全部外部请求走自建后端（app.gyx-a.cn 已备案）：
+//   GET  /proxy/weather?lat=&lon=   GET /proxy/geocode?q=|lat=&lon=   GET /proxy/hitokoto
 //   POST /proxy/ai/chat
-// 当前阶段（Phase 1-3）接 mocks/proxyMocks 本地 stub，接口签名与真实代理完全一致。
+// 后端不可达/异常时回退 mocks/proxyMocks 本地 stub（演示与离线兜底，接口签名完全一致）。
 import type { ChatMessage, GeoCandidate, Weather } from '../../types'
 import {
   mockChat,
@@ -12,30 +12,52 @@ import {
   mockReverseGeocode,
   mockSearchCities,
 } from '../../mocks/proxyMocks'
+import {
+  httpChatAI,
+  httpFetchHitokoto,
+  httpFetchWeather,
+  httpReverseGeocode,
+  httpSearchCities,
+} from '../httpProxy'
 
 export async function fetchWeather(lat: number, lon: number): Promise<Weather | null> {
-  // TODO(Phase 4): return httpProxy.fetchWeather(lat, lon)
-  return mockFetchWeather(lat, lon)
+  try {
+    return await httpFetchWeather(lat, lon)
+  } catch {
+    return mockFetchWeather(lat, lon)
+  }
 }
 
 export async function searchCities(q: string): Promise<GeoCandidate[]> {
-  // TODO(Phase 4): return httpProxy.searchCities(q)
-  return mockSearchCities(q)
+  try {
+    return await httpSearchCities(q)
+  } catch {
+    return mockSearchCities(q)
+  }
 }
 
 export async function fetchHitokoto(): Promise<string | null> {
-  // TODO(Phase 4): return httpProxy.fetchHitokoto()
-  return mockFetchHitokoto()
+  try {
+    return await httpFetchHitokoto()
+  } catch {
+    return mockFetchHitokoto()
+  }
 }
 
 /** 坐标反查地名（定位按钮用：取坐标 → 省市区名 + 原坐标） */
 export async function reverseGeocode(lat: number, lon: number): Promise<GeoCandidate> {
-  // TODO(Phase 4): return httpProxy.reverseGeocode(lat, lon)
-  return mockReverseGeocode(lat, lon)
+  try {
+    return await httpReverseGeocode(lat, lon)
+  } catch {
+    return mockReverseGeocode(lat, lon)
+  }
 }
 
 /** 智能问答（GLM-4 由后端代理转发，API Key 绝不落端） */
 export async function chatAI(messages: ChatMessage[]): Promise<string> {
-  // TODO(Phase 4): return httpProxy.chatAI(messages)
-  return mockChat(messages)
+  try {
+    return await httpChatAI(messages)
+  } catch {
+    return mockChat(messages)
+  }
 }

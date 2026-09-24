@@ -4,7 +4,7 @@
 import Taro from '@tarojs/taro'
 
 /** 美团外卖小程序 appId：TODO(Phase 3) 微信搜索「美团外卖」→ 右上角···→ 账号信息 查证后替换 */
-const MEITUAN_WAIMAI_APPID = 'TODO_MEITUAN_APPID'
+const MEITUAN_WAIMAI_APPID = 'wxde8ac0a21135c07d'
 
 /** 唤起美团外卖小程序（失败时 toast 引导手动搜索） */
 export async function openMeituanWaimai(): Promise<void> {
