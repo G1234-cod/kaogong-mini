@@ -1,0 +1,6 @@
+node_modules/
+dist/
+.swc/
+*.local
+.DS_Store
+npm-debug.log*
