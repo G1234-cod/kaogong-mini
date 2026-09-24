@@ -40,3 +40,8 @@ export const OTHER_CITIES: City[] = [
 ]
 
 export const QUICK_CITIES: City[] = [...HENAN_CITIES, ...OTHER_CITIES]
+
+/** 城市显示名：区县级结果带地级市前缀（洛阳市 · 洛龙区），否则直接显示名称 */
+export function cityLabel(c: { name: string; city?: string }): string {
+  return c.city && c.city !== c.name ? `${c.city} · ${c.name}` : c.name
+}

@@ -5,7 +5,13 @@
 //   POST /proxy/ai/chat
 // 当前阶段（Phase 1-3）接 mocks/proxyMocks 本地 stub，接口签名与真实代理完全一致。
 import type { ChatMessage, GeoCandidate, Weather } from '../../types'
-import { mockChat, mockFetchHitokoto, mockFetchWeather, mockSearchCities } from '../../mocks/proxyMocks'
+import {
+  mockChat,
+  mockFetchHitokoto,
+  mockFetchWeather,
+  mockReverseGeocode,
+  mockSearchCities,
+} from '../../mocks/proxyMocks'
 
 export async function fetchWeather(lat: number, lon: number): Promise<Weather | null> {
   // TODO(Phase 4): return httpProxy.fetchWeather(lat, lon)
@@ -20,6 +26,12 @@ export async function searchCities(q: string): Promise<GeoCandidate[]> {
 export async function fetchHitokoto(): Promise<string | null> {
   // TODO(Phase 4): return httpProxy.fetchHitokoto()
   return mockFetchHitokoto()
+}
+
+/** 坐标反查地名（定位按钮用：取坐标 → 省市区名 + 原坐标） */
+export async function reverseGeocode(lat: number, lon: number): Promise<GeoCandidate> {
+  // TODO(Phase 4): return httpProxy.reverseGeocode(lat, lon)
+  return mockReverseGeocode(lat, lon)
 }
 
 /** 智能问答（GLM-4 由后端代理转发，API Key 绝不落端） */

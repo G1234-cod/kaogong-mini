@@ -49,6 +49,22 @@ export async function mockSearchCities(q: string): Promise<GeoCandidate[]> {
   }))
 }
 
+// ---------- 坐标反查地名（stub：返回坐标本身 + 最近内置城市名） ----------
+
+export async function mockReverseGeocode(lat: number, lon: number): Promise<GeoCandidate> {
+  await new Promise((r) => setTimeout(r, 100))
+  let best = QUICK_CITIES[0]
+  let bestD = Infinity
+  for (const c of QUICK_CITIES) {
+    const d = (c.lat - lat) ** 2 + (c.lon - lon) ** 2
+    if (d < bestD) {
+      bestD = d
+      best = c
+    }
+  }
+  return { name: best.name, province: best.province, lat, lon }
+}
+
 // ---------- 一言 ----------
 
 const HITOKOTO_POOL = [

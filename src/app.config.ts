@@ -36,5 +36,7 @@ export default {
       { pagePath: 'pages/settings/index', text: '设置' }
     ]
   },
-  lazyCodeLoading: 'requiredComponents'
+  lazyCodeLoading: 'requiredComponents',
+  // 天气卡「自动检测当前位置」使用 wx.getLocation，须在此声明（微信 2022 起强制）
+  requiredPrivateInfos: ['getLocation']
 }

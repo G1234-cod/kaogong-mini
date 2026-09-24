@@ -61,9 +61,29 @@ export function buildGuestData(): AppData {
     moods[addDays(today, -(4 - i))] = { mood: m }
   })
 
-  const rewards = PRESET_REWARDS.map((r) =>
-    r.id === 'rw-milk-tea' ? { ...r, claimed: true, granted: true, achievedAt: Date.now() - 5 * dayMs } : r
-  )
+  // 奖励：15 天全勤 + 心情连好 已满足的均标记领取（避免演示首进打卡页连环弹盲盒），
+  // 留 rw-blind(20天)/rw-hidden-pomo(3番茄)/rw-hidden-30(30天) 展示进度与隐藏任务悬念
+  const claimedIds: Record<string, { code?: string; used?: boolean }> = {
+    'rw-milk-tea': { used: true },
+    'rw-cart': {},
+    'rw-movie': {},
+    'rw-sleep': {},
+    'rw-massage': {},
+    'rw-hidden-weekend': { code: 'KG-DEMO' },
+    'rw-hidden-mood': { code: 'KG-HAPPY' },
+  }
+  const rewards = PRESET_REWARDS.map((r, i) => {
+    const hit = claimedIds[r.id]
+    if (!hit) return r
+    return {
+      ...r,
+      claimed: true,
+      granted: true,
+      used: !!hit.used,
+      code: hit.code,
+      achievedAt: Date.now() - (5 - (i % 5)) * dayMs,
+    }
+  })
 
   return {
     settings: { ...DEFAULT_SETTINGS, intel: { enabled: true, tastes: ['饱腹'] } },
