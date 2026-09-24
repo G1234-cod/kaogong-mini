@@ -1608,24 +1608,19 @@ textarea {
   margin: 18px auto 6px;
 }
 
-.pomo-svg {
-  width: 100%;
-  height: 100%;
-  transform: rotate(-90deg); /* 进度从顶部顺时针开始 */
+/* WXML 不支持 svg：conic-gradient 圆环替代（进度条从顶部顺时针），
+   内层 .pomo-ring-mask 用页面底色挖空中环，环宽 10px 与原 stroke-width 对齐 */
+.pomo-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
 }
 
-.pomo-track {
-  fill: none;
-  stroke: var(--progress-bg);
-  stroke-width: 10;
-}
-
-.pomo-prog {
-  fill: none;
-  stroke: #6366f1;
-  stroke-width: 10;
-  stroke-linecap: round;
-  transition: stroke-dashoffset 0.5s linear;
+.pomo-ring-mask {
+  position: absolute;
+  inset: 10px;
+  border-radius: 50%;
+  background: var(--bg);
 }
 
 .pomo-center {
