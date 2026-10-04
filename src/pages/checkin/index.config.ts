@@ -1,1 +1,1 @@
-export default { navigationBarTitleText: '打卡' }
+export default { navigationBarTitleText: '打卡', usingComponents: {} }

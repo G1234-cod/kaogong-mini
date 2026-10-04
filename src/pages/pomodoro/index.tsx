@@ -4,7 +4,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import Taro from '@tarojs/taro'
 import { Input, Label, Text, View } from '@tarojs/components'
+import Icon from '../../components/Icon'
 import { useData } from '../../store'
+import Modal from '../../components/Modal'
 import { pad2, todayStr } from '../../utils/date'
 import { showToast } from '../../utils/platform'
 
@@ -279,9 +281,9 @@ export default function Pomodoro() {
   if (!ready) {
     return (
       <View className="page">
-        <View className="card">
-          <Text className="sub">加载中…</Text>
-        </View>
+        <View className="skeleton sk-card" />
+        <View className="skeleton sk-hero" />
+        <View className="skeleton sk-card" />
       </View>
     )
   }
@@ -299,7 +301,7 @@ export default function Pomodoro() {
             setBloomed(false)
           }}
         >
-          <Text>🍅 倒计时</Text>
+          <Icon name="tomato" size={12} gap={4} /><Text>倒计时</Text>
         </View>
         <View
           className={`type-btn ${activeMode === 'free' ? 'active' : ''}`}
@@ -310,7 +312,7 @@ export default function Pomodoro() {
             setBloomed(false)
           }}
         >
-          <Text>⏱ 正计时</Text>
+          <Icon name="clock" size={12} gap={4} /><Text>正计时</Text>
         </View>
       </View>
 
@@ -398,7 +400,7 @@ export default function Pomodoro() {
           <View
             className="pomo-ring"
             style={{
-              background: `conic-gradient(#6366f1 ${(progress * 100).toFixed(2)}%, var(--progress-bg) 0%)`,
+              background: `conic-gradient(var(--primary) ${(progress * 100).toFixed(2)}%, var(--progress-bg) 0%)`,
             }}
           />
           <View className="pomo-ring-mask" />
@@ -456,7 +458,7 @@ export default function Pomodoro() {
             <Text>放弃</Text>
           </View>
         ) : (
-          <View className="btn" style={{ padding: '10px 40px', fontSize: 16 }} onClick={start}>
+          <View className="btn hero" onClick={start}>
             <Text>开始专注</Text>
           </View>
         )}
@@ -465,7 +467,7 @@ export default function Pomodoro() {
       {/* 今日统计 */}
       <View className="card" style={{ marginTop: 16 }}>
         <View className="card-title">
-          <Text>🍅 今日番茄</Text>
+          <Icon name="tomato" size={16} gap={4} /><Text>今日番茄</Text>
           <View
             className="btn ghost small"
             onClick={() => Taro.navigateTo({ url: '/pages/pomo-logs/index' })}
@@ -483,11 +485,11 @@ export default function Pomodoro() {
                 : '太棒了，注意休息 💪'}
           </Text>
         </View>
-        <Text className="sub" style={{ marginTop: 2 }}>
+        <Text className="sub" style={{ display: 'block', marginTop: 2 }}>
           共 {todayMinutes} 分钟
         </Text>
         {lastTask && (
-          <Text className="sub" style={{ marginTop: 4 }}>
+          <Text className="sub" style={{ display: 'block', marginTop: 4 }}>
             最近一次：{lastTask}
           </Text>
         )}
@@ -495,20 +497,18 @@ export default function Pomodoro() {
 
       {/* 放弃确认：App 内小弹窗 */}
       {abandonAsk && (
-        <View className="modal-mask center" catchMove>
-          <View className="modal mini-modal">
-            <Text className="mini-title">放弃这个番茄？</Text>
-            <Text className="sub">剩下的专注时间会消失，种子也会枯萎 🥀</Text>
-            <View className="row" style={{ justifyContent: 'center', marginTop: 16 }}>
-              <View className="btn" onClick={() => setAbandonAsk(false)}>
-                <Text>继续专注</Text>
-              </View>
-              <View className="btn danger" onClick={doAbandon}>
-                <Text>忍痛放弃</Text>
-              </View>
+        <Modal variant="center" className="mini-modal" closeOnMask={false} onClose={() => setAbandonAsk(false)}>
+          <Text className="mini-title">放弃这个番茄？</Text>
+          <Text className="sub">剩下的专注时间会消失，种子也会枯萎 🥀</Text>
+          <View className="row" style={{ justifyContent: 'center', marginTop: 16 }}>
+            <View className="btn" onClick={() => setAbandonAsk(false)}>
+              <Text>继续专注</Text>
+            </View>
+            <View className="btn danger" onClick={doAbandon}>
+              <Text>忍痛放弃</Text>
             </View>
           </View>
-        </View>
+        </Modal>
       )}
     </View>
   )

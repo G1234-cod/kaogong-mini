@@ -1,1 +1,1 @@
-export default { navigationBarTitleText: '设置' }
+export default { navigationBarTitleText: '设置', usingComponents: {} }

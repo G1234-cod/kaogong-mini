@@ -1,51 +1,24 @@
-// 吃什么：餐次切换 + 口味筛选（想吃/不吃）+ 老虎机随机（收藏3倍权重）+ 智能帮挑（对话模式）
+// 吃什么：餐次切换 + 口味筛选（想吃/不吃）+ 老虎机随机（收藏3倍权重）+ AI 对话入口（智能帮我想）
 // 自 PWA pages/Food.tsx 迁移：GLM 直连（Key 在端侧）→ proxy.chatAI（Key 上云，端侧仅 settings.intel 开关），
 // window.open → 引导提示 / 复制，对话自动滚动 → ScrollView scrollIntoView，文案合规（AI→智能）
+// 智能帮我挑对话模式已迁移至 pages/ai-chat（候选卡/口味画像联动在那边），本页导出画像与上下文构建函数供其复用
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Taro from '@tarojs/taro'
-import { Input, ScrollView, Text, View } from '@tarojs/components'
+import { Image, Input, ScrollView, Text, View } from '@tarojs/components'
 import { useData } from '../../store'
-import type { FoodItem, MealSlot, TasteTag } from '../../types'
+import Icon from '../../components/Icon'
+import SwipeRow from '../../components/SwipeRow'
+import { appConfirm } from '../../components/ConfirmDialog'
+import animalEmpty from '../../assets/images/汤圆.png'
+import type { FoodItem, MealSlot, PoiItem, TasteTag } from '../../types'
 import { MEAL_SLOT_LABELS } from '../../constants/foods'
-import { chatAI } from '../../services/api/proxy'
-import { openMeituanWaimai } from '../../services/meituan'
+import { searchNearbyPois } from '../../services/api/proxy'
+import { openDelivery } from '../../services/meituan'
 import { copyText, showToast } from '../../utils/platform'
 import { todayStr, uid } from '../../utils/date'
 
 const SLOTS: MealSlot[] = ['breakfast', 'lunch', 'dinner', 'supper']
 const TASTES: TasteTag[] = ['清淡', '辣', '快餐', '饱腹']
-
-const CHAT_SYS =
-  '你是贴心的吃饭顾问，帮一个正在备考的朋友决定今天吃什么。规则：最多对话 5 轮；' +
-  '先问 1-2 个二选一的问题（如：想吃辣还是清淡？米饭还是面食？点外卖还是家里吃？），根据用户的回答收敛；' +
-  '然后给出 1-2 个明确的推荐并附简短理由；当用户说"就这个/行/好"等表示同意时结束对话。' +
-  '给出推荐时，必须在消息最后单独一行输出：【推荐】食物名。语气亲切轻松，每次回复 60 字以内。'
-
-/** 智能推荐（走后端代理，一次成型） */
-async function aiRecommend(
-  slot: string,
-  exclude: string
-): Promise<{ name: string; reason: string } | null> {
-  try {
-    const text = await chatAI([
-      {
-        role: 'user',
-        content:
-          `我是河南的备考学生，请推荐一个适合当${slot}吃的食物。要求：只返回 JSON，格式 {"name":"食物名(10字内)","reason":"推荐理由(20字内)"}。` +
-          (exclude ? `不要推荐这些（今天已吃）：${exclude}。` : '') +
-          '倾向推荐常见、实惠、中国大陆随处能买到或点到的，可以是河南特色。',
-      },
-    ])
-    if (!text) return null
-    const m = text.match(/\{[\s\S]*\}/)
-    if (!m) return null
-    const parsed = JSON.parse(m[0])
-    if (parsed.name) return { name: parsed.name, reason: parsed.reason ?? '' }
-    return null
-  } catch {
-    return null
-  }
-}
 
 export default function Food() {
   const { data, ready, set } = useData()
@@ -65,8 +38,7 @@ export default function Food() {
   const [newName, setNewName] = useState('')
   const [newTastes, setNewTastes] = useState<TasteTag[]>([])
   const [managing, setManaging] = useState(false)
-  const [aiLoading, setAiLoading] = useState(false)
-  const [aiResult, setAiResult] = useState<{ name: string; reason: string } | null>(null)
+  const [filterOpen, setFilterOpen] = useState(false) // 口味筛选折叠（默认收起一行）
   const rollTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   // 卸载时清掉滚动计时器
   useEffect(() => () => { if (rollTimer.current) clearTimeout(rollTimer.current) }, [])
@@ -107,7 +79,6 @@ export default function Food() {
     if (filtered.length === 0 || rolling) return
     setRolling(true)
     setResult(null)
-    setAiResult(null)
     setCopied(false)
     let count = 0
     const tick = () => {
@@ -128,6 +99,13 @@ export default function Food() {
     set('foods', (prev) => prev.map((x) => (x.id === id ? { ...x, fav: !x.fav } : x)))
   }
 
+  /** 左滑删除候选（SwipeRow 触发）：先 appConfirm 确认再删 */
+  const removeFood = (x: FoodItem) => {
+    void appConfirm(`删除候选「${x.name}」？`, undefined, { danger: true, confirmText: '删除' }).then((ok) => {
+      if (ok) set('foods', (prev) => prev.filter((p) => p.id !== x.id))
+    })
+  }
+
   const recordEaten = (name: string) => {
     set('foodLog', (prev) => ({
       ...prev,
@@ -137,7 +115,10 @@ export default function Food() {
   }
 
   const addFood = () => {
-    if (!newName.trim()) return
+    if (!newName.trim()) {
+      showToast('请输入食物名称')
+      return
+    }
     set('foods', (prev) => [
       ...prev,
       { id: uid(), name: newName.trim(), emoji: '🍽', slots: [slot], tags: newTastes },
@@ -157,85 +138,57 @@ export default function Food() {
     setResult(null)
   }
 
-  const runAI = async () => {
-    if (!intelOn || aiLoading) return
-    setAiLoading(true)
-    setAiResult(null)
-    const r = await aiRecommend(MEAL_SLOT_LABELS[slot], eatenToday.join('、'))
-    setAiResult(r)
-    setAiLoading(false)
-  }
-
   const eatenLabel = (s: MealSlot) => todayFoodLog[s]
 
-  // ---- 智能帮我挑：全屏对话模式（退出即清历史） ----
-  const [chatOpen, setChatOpen] = useState(false)
-  const [chatMsgs, setChatMsgs] = useState<{ role: 'ai' | 'user'; text: string }[]>([])
-  const [chatInput, setChatInput] = useState('')
-  const [chatBusy, setChatBusy] = useState(false)
-  const chatTurns = useRef(0)
+  // ---- 搜附近美食（腾讯位置服务 POI，走后端代理） ----
+  const [poiOpen, setPoiOpen] = useState(false)
+  const [pois, setPois] = useState<PoiItem[]>([])
+  const [poiLoading, setPoiLoading] = useState(false)
 
-  const callAI = async (
-    history: { role: 'ai' | 'user'; text: string }[],
-    forceFinal = false
-  ): Promise<string> => {
-    const r = await chatAI([
-      {
-        role: 'system',
-        content:
-          CHAT_SYS + (forceFinal ? '\n（对话轮次快到上限了，请直接给出最终推荐）' : ''),
-      },
-      ...history.map((m) => ({
-        role: (m.role === 'ai' ? 'assistant' : 'user') as 'assistant' | 'user',
-        content: m.text,
-      })),
-    ])
-    return r ?? '（网络开小差了，稍后再试 🙏）'
+  const openNearby = async () => {
+    if (!result) return
+    setPoiOpen(true)
+    setPoiLoading(true)
+    setPois([])
+    let lat = data.settings.city?.lat
+    let lon = data.settings.city?.lon
+    try {
+      // 优先实时定位，拒绝授权则退回已保存城市的坐标
+      const pos = await Taro.getFuzzyLocation({ type: 'gcj02' })
+      lat = pos.latitude
+      lon = pos.longitude
+    } catch {
+      // 用户拒绝定位权限 → 用已保存城市
+    }
+    if (lat == null || lon == null) {
+      showToast('还没有可用位置，请先在「今日」页设置城市')
+      setPoiLoading(false)
+      return
+    }
+    try {
+      const list = await searchNearbyPois(lat, lon, result.name)
+      setPois(list)
+      if (list.length === 0) showToast('附近没搜到相关店铺，换个候选试试')
+    } catch {
+      showToast('搜索失败，请检查网络')
+    } finally {
+      setPoiLoading(false)
+    }
   }
 
-  const startChat = () => {
-    setChatOpen(true)
-    setChatMsgs([])
-    setChatInput('')
-    chatTurns.current = 0
-    void (async () => {
-      setChatBusy(true)
-      const r = await callAI([{ role: 'user', text: `帮我挑今天的${MEAL_SLOT_LABELS[slot]}吧` }])
-      setChatMsgs([{ role: 'ai', text: r }])
-      setChatBusy(false)
-    })()
+  /** 点击 POI → 地图查看位置与路线 */
+  const openPoi = (p: PoiItem) => {
+    void Taro.openLocation({
+      latitude: p.lat,
+      longitude: p.lon,
+      name: p.name,
+      address: p.address,
+    })
   }
 
-  const sendChat = () => {
-    const text = chatInput.trim()
-    if (!text || chatBusy) return
-    const history = [...chatMsgs, { role: 'user' as const, text }]
-    setChatMsgs(history)
-    setChatInput('')
-    chatTurns.current++
-    void (async () => {
-      setChatBusy(true)
-      const r = await callAI(history, chatTurns.current >= 4)
-      setChatMsgs((prev) => [...prev, { role: 'ai', text: r }])
-      setChatBusy(false)
-    })()
-  }
-
-  const closeChat = () => {
-    setChatOpen(false)
-    setChatMsgs([])
-    setChatInput('')
-  }
-
-  /** 从消息中解析「【推荐】食物名」 */
-  const recOf = (text: string): string | null => {
-    const m = text.match(/【推荐】\s*(.+)/)
-    return m ? m[1].trim() : null
-  }
-
-  const pickRec = (name: string) => {
-    recordEaten(name)
-    closeChat()
+  // ---- AI 对话页入口（对话逻辑已迁移至 pages/ai-chat） ----
+  const openAIChat = () => {
+    Taro.navigateTo({ url: `/pages/ai-chat/index?ctx=food&slot=${slot}` })
   }
 
   if (!ready) {
@@ -250,9 +203,26 @@ export default function Food() {
 
   return (
     <View className="page">
+      {/* 餐次切换（置顶） */}
+      <View className="slot-tabs">
+        {SLOTS.map((s) => (
+          <View
+            key={s}
+            className={`slot-btn ${slot === s ? 'active' : ''}`}
+            onClick={() => {
+              setSlot(s)
+              setResult(null)
+            }}
+          >
+            <Text>{MEAL_SLOT_LABELS[s]}</Text>
+            {eatenLabel(s) ? <Icon name="check" size={12} gap={2} /> : null}
+          </View>
+        ))}
+      </View>
+
       {/* 今日已吃 */}
       {eatenToday.length > 0 && (
-        <View className="card" style={{ padding: '10px 14px' }}>
+        <View className="card food-eaten">
           <Text className="sub">
             📝 今天已吃：
             {SLOTS.filter((s) => todayFoodLog[s])
@@ -262,84 +232,17 @@ export default function Food() {
         </View>
       )}
 
-      {/* 餐次切换 */}
-      <View className="slot-tabs">
-        {SLOTS.map((s) => (
-          <View
-            key={s}
-            className={`slot-btn ${slot === s ? 'active' : ''}`}
-            onClick={() => {
-              setSlot(s)
-              setResult(null)
-              setAiResult(null)
-            }}
-          >
-            <Text>
-              {MEAL_SLOT_LABELS[s]}
-              {eatenLabel(s) ? ' ✓' : ''}
-            </Text>
-          </View>
-        ))}
-      </View>
-
-      {/* 智能帮我挑（对话模式） */}
-      <View className="row" style={{ margin: '10px 0', gap: 8 }}>
-        <View
-          className={`btn ghost${intelOn ? '' : ' is-disabled'}`}
-          style={{ flex: 1 }}
-          onClick={() => {
-            if (intelOn) startChat()
-          }}
-        >
-          <Text>🤖 智能帮我挑</Text>
-        </View>
-      </View>
+      {/* 智能未开启提示：可点跳智能助手设置 */}
       {!intelOn && (
-        <Text className="sub" style={{ margin: '-4px 2px 10px', fontSize: 12 }}>
-          未开启智能推荐，去「设置 → 智能助手」开启
+        <Text
+          className="sub food-intel-tip"
+          onClick={() => Taro.navigateTo({ url: '/pages/settings-sub/index?type=intel' })}
+        >
+          未开启智能助手，点这里去「设置 → 智能助手」开启后可用「AI 对话」
         </Text>
       )}
 
-      {/* 口味筛选：想吃的 + 不吃的 */}
-      <View className="taste-filter">
-        <View className="row" style={{ flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
-          <Text className="sub" style={{ fontSize: 12, fontWeight: 600 }}>
-            想吃
-          </Text>
-          {TASTES.map((t) => (
-            <Text
-              key={t}
-              className={`tag ${wantTastes.includes(t) ? 'selected' : ''}`}
-              style={{ border: 'none', padding: '5px 13px', fontSize: 13 }}
-              onClick={() => toggleTaste(t, 'want')}
-            >
-              {t}
-            </Text>
-          ))}
-        </View>
-        <View className="row" style={{ flexWrap: 'wrap', gap: 6, alignItems: 'center', marginTop: 6 }}>
-          <Text className="sub" style={{ fontSize: 12, fontWeight: 600 }}>
-            不吃
-          </Text>
-          {TASTES.map((t) => (
-            <Text
-              key={t}
-              className={`tag ${avoidTastes.includes(t) ? 'avoid' : ''}`}
-              style={{ border: 'none', padding: '5px 13px', fontSize: 13 }}
-              onClick={() => toggleTaste(t, 'avoid')}
-            >
-              {t}
-            </Text>
-          ))}
-        </View>
-        <Text className="sub" style={{ marginTop: 6, fontSize: 12 }}>
-          {wantTastes.length === 0 && avoidTastes.length === 0
-            ? `全部 ${filtered.length} 个候选（不含今天吃过的）`
-            : `${wantTastes.map((t) => t).join('+') || '不限'}${avoidTastes.length ? '，不吃' + avoidTastes.join('/') : ''} · 剩 ${filtered.length} 个候选`}
-        </Text>
-      </View>
-
-      {/* 结果区 */}
+      {/* 老虎机结果 hero 大卡（先看到结果） */}
       <View className="food-result">
         {rolling ? (
           <>
@@ -351,18 +254,59 @@ export default function Food() {
             <Text className="food-emoji">{result.emoji}</Text>
             <Text className="food-name">{result.name}</Text>
             {result.tags.length > 0 && (
-              <View style={{ marginBottom: 6 }}>
+              <View className="food-result-tags">
                 {result.tags.map((t) => (
-                  <Text
-                    className="tag"
-                    key={t}
-                    style={{ background: 'rgba(255,255,255,0.25)', color: '#fff' }}
-                  >
+                  <Text className="tag" key={t}>
                     {t}
                   </Text>
                 ))}
               </View>
             )}
+            {/* 外卖跳转：降为结果卡内次要按钮 */}
+            <View className="divider" />
+            <View className="row" style={{ justifyContent: 'center', flexWrap: 'wrap', gap: 8 }}>
+              <View className="btn plain" onClick={() => void openDelivery('meituan', result.name)}>
+                <Text>美团</Text>
+              </View>
+              <View className="btn plain" onClick={() => void openDelivery('eleme', result.name)}>
+                <Text>饿了么</Text>
+              </View>
+              <View className="btn plain" onClick={() => void openNearby()}>
+                <Text>搜附近</Text>
+              </View>
+            </View>
+            <Text className="sub food-tip">
+              美团/饿了么会复制「{result.name}」后跳转小程序，粘贴即可搜索
+            </Text>
+          </>
+        ) : (
+          <>
+            <Text className="food-emoji">🍽</Text>
+            <Text className="sub food-result-hint">
+              选择困难症？让命运决定今天的{MEAL_SLOT_LABELS[slot]}
+            </Text>
+          </>
+        )}
+      </View>
+
+      {/* 主 CTA：帮我选 / 就吃它 */}
+      {!result ? (
+        <View className="food-cta">
+          <View
+            className={`btn big-btn${filtered.length === 0 || rolling ? ' is-disabled' : ''}`}
+            onClick={() => {
+              if (filtered.length > 0) startRoll()
+            }}
+          >
+            <Text>帮我选</Text>
+          </View>
+          {filtered.length === 0 && (
+            <Text className="sub food-empty-tip">筛选条件下没有候选了，放宽条件或去下面添加</Text>
+          )}
+        </View>
+      ) : (
+        !rolling && (
+          <View className="food-cta">
             <View className="row" style={{ justifyContent: 'center', flexWrap: 'wrap', gap: 8 }}>
               <View className="btn" onClick={() => recordEaten(result.name)}>
                 <Text>就吃它 🍽</Text>
@@ -380,102 +324,78 @@ export default function Food() {
                 <Text>{copied ? '已复制 ✓' : '复制'}</Text>
               </View>
             </View>
-            <View className="divider" />
-            <View className="row" style={{ justifyContent: 'center', flexWrap: 'wrap', gap: 8 }}>
-              <View className="btn" onClick={() => void openMeituanWaimai()}>
-                <Text>美团</Text>
-              </View>
-              <View
-                className="btn"
-                onClick={() => showToast('请在微信内搜索「饿了么」小程序下单')}
-              >
-                <Text>饿了么</Text>
-              </View>
-              <View
-                className="btn plain"
-                onClick={async () => {
-                  await copyText(result.name)
-                  showToast('已复制，可打开地图 App 搜索附近')
-                }}
-              >
-                <Text>搜附近</Text>
-              </View>
-            </View>
-          </>
-        ) : (
+          </View>
+        )
+      )}
+
+      {/* 口味筛选：默认折叠一行，可展开 */}
+      <View className="taste-filter">
+        <View className="row-between food-filter-row" onClick={() => setFilterOpen((v) => !v)}>
+          <Text className="sub">
+            口味：
+            {wantTastes.length === 0 && avoidTastes.length === 0
+              ? '不限'
+              : `${wantTastes.join('+') || '不限'}${avoidTastes.length ? '，不吃' + avoidTastes.join('/') : ''}`}
+          </Text>
+          <Icon name={filterOpen ? 'arrow-down' : 'arrow-up'} size={14} gap={2} />
+        </View>
+        {filterOpen && (
           <>
-            <Text className="food-emoji">🍽</Text>
-            <Text className="sub" style={{ margin: '6px 0 14px' }}>
-              选择困难症？让命运决定今天的{MEAL_SLOT_LABELS[slot]}
-            </Text>
-            <View
-              className={`btn big-btn${filtered.length === 0 ? ' is-disabled' : ''}`}
-              onClick={() => {
-                if (filtered.length > 0) startRoll()
-              }}
-            >
-              <Text>帮我选</Text>
+            <View className="row taste-row">
+              <Text className="taste-label">想吃</Text>
+              {TASTES.map((t) => (
+                <Text
+                  key={t}
+                  className={`tag ${wantTastes.includes(t) ? 'selected' : ''}`}
+                  onClick={() => toggleTaste(t, 'want')}
+                >
+                  {t}
+                </Text>
+              ))}
             </View>
-            {filtered.length === 0 && (
-              <Text className="sub" style={{ marginTop: 10, color: '#fecaca' }}>
-                筛选条件下没有候选了，放宽条件或去下面添加
-              </Text>
-            )}
+            <View className="row taste-row">
+              <Text className="taste-label">不吃</Text>
+              {TASTES.map((t) => (
+                <Text
+                  key={t}
+                  className={`tag ${avoidTastes.includes(t) ? 'avoid' : ''}`}
+                  onClick={() => toggleTaste(t, 'avoid')}
+                >
+                  {t}
+                </Text>
+              ))}
+            </View>
           </>
         )}
+        <Text className="sub food-filter-count">
+          {wantTastes.length === 0 && avoidTastes.length === 0
+            ? `全部 ${filtered.length} 个候选（不含今天吃过的）`
+            : `${wantTastes.map((t) => t).join('+') || '不限'}${avoidTastes.length ? '，不吃' + avoidTastes.join('/') : ''} · 剩 ${filtered.length} 个候选`}
+        </Text>
       </View>
 
-      {/* 智能帮我想（一次成型推荐） */}
+      {/* 智能帮我想 → AI 对话入口 */}
       {intelOn && (
         <View className="card">
           <View className="card-title">
-            <Text>🤖 智能帮我想</Text>
-            <View
-              className={`btn ghost small${aiLoading ? ' is-disabled' : ''}`}
-              onClick={() => {
-                if (!aiLoading) void runAI()
-              }}
-            >
-              <Text>{aiLoading ? '思考中…' : '问问小助手'}</Text>
+            <View className="row" style={{ gap: 8, alignItems: 'center' }}>
+              <View className="emoji-badge sm">
+                <Text className="emoji">🤖</Text>
+              </View>
+              <Text>智能帮我想</Text>
+            </View>
+            <View className="btn ghost small" onClick={openAIChat}>
+              <Icon name="chat" size={12} gap={4} />
+              <Text>AI 对话</Text>
             </View>
           </View>
-          {aiLoading && <Text className="sub">正在生成今日{MEAL_SLOT_LABELS[slot]}推荐…</Text>}
-          {aiResult && (
-            <View>
-              <Text style={{ fontSize: 17, fontWeight: 700 }}>{aiResult.name}</Text>
-              <Text className="sub" style={{ margin: '4px 0 8px', display: 'block' }}>
-                {aiResult.reason}
-              </Text>
-              <View className="row" style={{ gap: 8 }}>
-                <View
-                  className="btn small"
-                  onClick={() => {
-                    recordEaten(aiResult.name)
-                    setAiResult(null)
-                  }}
-                >
-                  <Text>就吃它</Text>
-                </View>
-                <View
-                  className="btn ghost small"
-                  onClick={() => {
-                    set('foods', (prev) =>
-                      prev.some((x) => x.name === aiResult.name)
-                        ? prev
-                        : [...prev, { id: uid(), name: aiResult.name, emoji: '✨', slots: [slot], tags: [] }]
-                    )
-                    setAiResult(null)
-                  }}
-                >
-                  <Text>加入候选池</Text>
-                </View>
-              </View>
-            </View>
-          )}
+          <Text className="sub" style={{ display: 'block', marginTop: 2 }}>
+            和小助手聊两句，帮你想出今天{MEAL_SLOT_LABELS[slot]}吃什么，聊完直接拍板记录
+          </Text>
         </View>
       )}
 
-      {/* 候选池管理 */}
+      {/* 候选池：默认收起为二级入口，展开进入管理态 */}
       <View className="card">
         <View className="card-title">
           <Text>
@@ -486,49 +406,29 @@ export default function Food() {
           </View>
         </View>
         {!managing && (
-          <View className="food-chips">
-            {filtered.slice(0, 24).map((x) => (
-              <Text
-                className={`food-chip ${x.fav ? 'fav' : ''}`}
-                key={x.id}
-                onClick={() => toggleFav(x.id)}
-              >
-                {x.emoji} {x.name} {x.fav ? '⭐' : ''}
-              </Text>
-            ))}
-            {filtered.length > 24 && (
-              <Text className="sub">…共 {filtered.length} 个</Text>
-            )}
-            {filtered.length === 0 && (
-              <Text className="empty">筛选后没有候选</Text>
-            )}
-          </View>
+          <Text className="sub">共 {slotFoods.length} 个候选，点「管理」可添加、调收藏或删除</Text>
         )}
         {managing && (
           <>
-            <Text className="sub" style={{ marginBottom: 8 }}>
-              点击 ⭐ 切换收藏（随机时更容易抽中）；点 ✕ 删除
-            </Text>
-            <View className="food-chips">
-              {slotFoods.map((x) => (
-                <Text
-                  className={`food-chip ${x.fav ? 'fav' : ''} ${
-                    avoidTastes.some((t) => x.tags.includes(t)) ? 'muted' : ''
-                  }`}
-                  key={x.id}
+            <Text className="sub food-manage-tip">点条目切换收藏（随机时更容易抽中）；左滑删除</Text>
+            {slotFoods.map((x) => (
+              <SwipeRow key={x.id} onDelete={() => removeFood(x)}>
+                <View
+                  className={`food-chip-row ${avoidTastes.some((t) => x.tags.includes(t)) ? 'muted' : ''}`}
+                  onClick={() => toggleFav(x.id)}
                 >
-                  <Text onClick={() => toggleFav(x.id)}>
+                  <Text className={`food-chip ${x.fav ? 'fav' : ''}`}>
                     {x.emoji} {x.name} {x.fav ? '⭐' : ''}
                   </Text>
-                  <Text
-                    style={{ marginLeft: 4, color: 'var(--danger)' }}
-                    onClick={() => set('foods', (prev) => prev.filter((p) => p.id !== x.id))}
-                  >
-                    ✕
-                  </Text>
-                </Text>
-              ))}
-            </View>
+                </View>
+              </SwipeRow>
+            ))}
+            {slotFoods.length === 0 && (
+              <View className="empty">
+                <Image className="empty-animal" src={animalEmpty} mode="aspectFit" />
+                <Text>还没有候选，先在下面添加</Text>
+              </View>
+            )}
             <View className="divider" />
             <View className="field">
               <Input
@@ -537,12 +437,11 @@ export default function Food() {
                 onInput={(e) => setNewName(e.detail.value)}
               />
             </View>
-            <View className="row" style={{ flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
+            <View className="row taste-row" style={{ marginBottom: 10 }}>
               {TASTES.map((t) => (
                 <Text
                   key={t}
                   className={`tag ${newTastes.includes(t) ? 'selected' : ''}`}
-                  style={{ border: 'none', padding: '4px 12px', fontSize: 13 }}
                   onClick={() =>
                     setNewTastes((prev) => (prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t]))
                   }
@@ -558,55 +457,56 @@ export default function Food() {
         )}
       </View>
 
-      {/* 智能帮我挑：全屏对话视图 */}
-      {chatOpen && (
+      {/* 搜附近美食：POI 结果浮层 */}
+      {poiOpen && (
         <View className="chat-overlay">
           <View className="chat-head">
-            <Text className="grow">🤖 智能帮我挑 · {MEAL_SLOT_LABELS[slot]}</Text>
-            <View className="chat-close" onClick={closeChat}>
-              <Text>✕ 退出</Text>
+            <Icon name="pin" size={16} gap={4} />
+            <Text className="grow">附近「{result?.name ?? ''}」</Text>
+            <View className="chat-close" onClick={() => setPoiOpen(false)}>
+              <Icon name="x" size={12} gap={4} />
+              <Text>关闭</Text>
             </View>
           </View>
-          <ScrollView
-            scrollY
-            className="chat-body"
-            scrollIntoView={`chat-msg-${chatMsgs.length - 1}`}
-            scrollWithAnimation
-          >
-            {chatMsgs.map((m, i) => {
-              const rec = m.role === 'ai' ? recOf(m.text) : null
-              return (
-                <View key={i} id={`chat-msg-${i}`} className={`chat-msg ${m.role}`}>
-                  <Text className="bubble">{m.text}</Text>
-                  {rec && (
-                    <View className="btn small chat-pick" onClick={() => pickRec(rec)}>
-                      <Text>就吃这个！</Text>
-                    </View>
-                  )}
-                </View>
-              )
-            })}
-            {chatBusy && (
+          <ScrollView scrollY className="chat-body">
+            {poiLoading && (
               <View className="chat-msg ai">
-                <Text className="bubble">思考中…</Text>
+                <Text className="bubble">正在搜索附近的店…</Text>
               </View>
             )}
+            {!poiLoading && pois.length === 0 && (
+              <View className="chat-msg ai">
+                <Text className="bubble">附近没搜到相关店铺，换个候选再试试～</Text>
+              </View>
+            )}
+            {pois.map((p) => (
+              <View
+                key={p.id}
+                className="card poi-card"
+                style={{ margin: 0 }}
+                onClick={() => openPoi(p)}
+              >
+                <View className="row" style={{ justifyContent: 'space-between' }}>
+                  <Text style={{ fontSize: 16, fontWeight: 700, flex: 1 }}>{p.name}</Text>
+                  <Text className="sub" style={{ fontSize: 14, flexShrink: 0 }}>
+                    {p.distance >= 1000 ? `${(p.distance / 1000).toFixed(1)} km` : `${p.distance} m`}
+                  </Text>
+                </View>
+                <Text className="sub" style={{ fontSize: 14, display: 'block', marginTop: 4 }}>
+                  {p.address}
+                </Text>
+                {p.tel && (
+                  <View style={{ marginTop: 2, display: 'flex', alignItems: 'center' }}>
+                    <Icon name="phone" size={14} gap={4} />
+                    <Text className="sub" style={{ fontSize: 14 }}>{p.tel}</Text>
+                  </View>
+                )}
+                <Text className="sub" style={{ fontSize: 14, display: 'block', marginTop: 6, color: 'var(--primary)' }}>
+                  点击查看位置与路线 →
+                </Text>
+              </View>
+            ))}
           </ScrollView>
-          <View className="chat-input">
-            <Input
-              placeholder={chatTurns.current >= 4 ? '再说一句，小助手就要拍板了…' : '如：清淡一点 / 米饭 / 行'}
-              value={chatInput}
-              onInput={(e) => setChatInput(e.detail.value)}
-              onConfirm={sendChat}
-              confirmType="send"
-            />
-            <View
-              className={`btn${!chatInput.trim() || chatBusy ? ' is-disabled' : ''}`}
-              onClick={sendChat}
-            >
-              <Text>发送</Text>
-            </View>
-          </View>
         </View>
       )}
     </View>

@@ -13,3 +13,11 @@ server/__pycache__/
 server/*.db
 .DS_Store
 npm-debug.log*
+
+# IDE / 本地工作痕迹
+.vscode/
+.trae/
+project.private.config.json
+
+# 图片备份（src/assets/images 为正式引用源）
+.img-backup/

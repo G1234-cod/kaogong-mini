@@ -24,6 +24,13 @@ export function daysBetween(from: string, to: string): number {
   return Math.round((b - a) / 86400000)
 }
 
+/** 自然周（周一为起点）的周一日期串 */
+export function startOfWeek(dateStrIn: string): string {
+  const d = new Date(dateStrIn + 'T00:00:00')
+  d.setDate(d.getDate() - ((d.getDay() + 6) % 7))
+  return dateStr(d)
+}
+
 /** "07:30" -> 450 分钟 */
 export function hmToMin(hm: string): number {
   const [h, m] = hm.split(':').map(Number)

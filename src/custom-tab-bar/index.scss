@@ -1,0 +1,49 @@
+/* 自定义 tabBar：暖奶油治愈风，主色液态指示背景（实体选中，与筛选胶囊风格统一） */
+.ctb {
+  background: #fffdfa;
+  border-top: 1px solid #e9ddcd;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.ctb-bar {
+  position: relative;
+  display: flex;
+  height: 52px;
+}
+
+/*
+ * 液态指示背景：left/width 由 JS 运行时 px 直下发（锚在槽 0），
+ * 位置与拉长全部由 transform（translateX/scaleX）驱动，
+ * 纯合成层动画，避免 left/width 布局重排导致的卡顿。
+ */
+.ctb-pill {
+  position: absolute;
+  top: 7px;
+  bottom: 7px;
+  border-radius: 999px;
+  background: #be5016;
+  transform-origin: center center;
+  will-change: transform;
+  pointer-events: none;
+  z-index: 0;
+  box-shadow: 0 2px 6px rgba(190, 80, 22, 0.28);
+}
+
+.ctb-item {
+  position: relative;
+  z-index: 1;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ctb-text {
+  font-size: 13px;
+  color: #7a6a5b;
+
+  &.on {
+    color: #ffffff;
+    font-weight: 700;
+  }
+}

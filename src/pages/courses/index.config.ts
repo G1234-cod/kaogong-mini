@@ -1,1 +1,1 @@
-export default { navigationBarTitleText: '课程' }
+export default { navigationBarTitleText: '课程与考试', usingComponents: {} }

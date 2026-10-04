@@ -4,6 +4,8 @@
 import { useMemo, useState } from 'react'
 import { Text, View } from '@tarojs/components'
 import { dateStr, todayStr } from '../utils/date'
+import Icon from './Icon'
+import Modal from './Modal'
 
 const WEEK = ['一', '二', '三', '四', '五', '六', '日']
 
@@ -28,11 +30,14 @@ export default function DatePicker({
   onChange,
   placeholder = '选日期',
   compact = false,
+  fmt,
 }: {
   value: string
   onChange: (v: string) => void
   placeholder?: string
   compact?: boolean
+  /** 自定义触发器显示文案（如专注记录年档只显示「2026年」）；缺省按 compact 取短/长格式 */
+  fmt?: (v: string) => string
 }) {
   const [open, setOpen] = useState(false)
   const [view, setView] = useState(() => ymOf(value || todayStr()))
@@ -78,56 +83,54 @@ export default function DatePicker({
         }}
       >
         {value ? (
-          <Text>{compact ? fmtDateShort(value) : fmtFull(value)}</Text>
+          <Text>{fmt ? fmt(value) : compact ? fmtDateShort(value) : fmtFull(value)}</Text>
         ) : (
           <Text className="dp-ph">{placeholder}</Text>
         )}
-        <Text className="dp-ico">📅</Text>
+        <Icon name="calendar" size={14} className="dp-ico" />
       </View>
 
       {open && (
-        <View className="modal-mask" catchMove onClick={() => setOpen(false)}>
-          <View className="modal dp-cal" onClick={(e) => e.stopPropagation()}>
-            <View className="dp-head">
-              <View className="dp-nav" onClick={() => shift(-1)}>
-                ‹
-              </View>
-              <Text className="dp-title">
-                {view.y}年{view.m}月
-              </Text>
-              <View className="dp-nav" onClick={() => shift(1)}>
-                ›
-              </View>
+        <Modal variant="sheet" className="dp-cal" onClose={() => setOpen(false)}>
+          <View className="dp-head">
+            <View className="dp-nav" onClick={() => shift(-1)}>
+              <Icon name="arrow-up" size={18} className="dp-arrow-l" />
             </View>
-            <View className="dp-grid">
-              {WEEK.map((w) => (
-                <Text className="wk" key={w}>
-                  {w}
-                </Text>
-              ))}
-              {cells.map((c) => (
-                <View
-                  key={c.ds}
-                  className={`dp-day${c.inMonth ? '' : ' adj'}${c.ds === today ? ' today' : ''}${c.ds === value ? ' sel' : ''}`}
-                  onClick={() => pick(c.ds)}
-                >
-                  {c.day}
-                </View>
-              ))}
-            </View>
-            <View className="dp-actions">
-              <View
-                className="btn ghost small"
-                onClick={() => {
-                  setView(ymOf(today))
-                  pick(today)
-                }}
-              >
-                今天
-              </View>
+            <Text className="dp-title">
+              {view.y}年{view.m}月
+            </Text>
+            <View className="dp-nav" onClick={() => shift(1)}>
+              <Icon name="arrow-up" size={18} className="dp-arrow-r" />
             </View>
           </View>
-        </View>
+          <View className="dp-grid">
+            {WEEK.map((w) => (
+              <Text className="wk" key={w}>
+                {w}
+              </Text>
+            ))}
+            {cells.map((c) => (
+              <View
+                key={c.ds}
+                className={`dp-day${c.inMonth ? '' : ' adj'}${c.ds === today ? ' today' : ''}${c.ds === value ? ' sel' : ''}`}
+                onClick={() => pick(c.ds)}
+              >
+                {c.day}
+              </View>
+            ))}
+          </View>
+          <View className="dp-actions">
+            <View
+              className="btn ghost small"
+              onClick={() => {
+                setView(ymOf(today))
+                pick(today)
+              }}
+            >
+              今天
+            </View>
+          </View>
+        </Modal>
       )}
     </>
   )

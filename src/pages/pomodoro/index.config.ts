@@ -1,1 +1,1 @@
-export default { navigationBarTitleText: '番茄钟' }
+export default { navigationBarTitleText: '种花番茄钟' }

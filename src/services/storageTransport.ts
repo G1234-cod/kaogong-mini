@@ -3,7 +3,7 @@
 // - guest 角色的写操作改写入 kg-guest-* 命名空间（随写随弃、不落库、不污染真实数据）
 // - 角色判定当前由开发开关 kg-dev-role 模拟（真机上应经后端白名单判定）
 import Taro from '@tarojs/taro'
-import type { AppData, GrantItem } from '../types'
+import type { AppData, GrantItem, TaskDef } from '../types'
 import { uid } from '../utils/date'
 import type { AuthInfo, Transport, WriteOp } from './request'
 
@@ -37,18 +37,13 @@ export function getCachedAuth(): AuthInfo | null {
   return readJSON<AuthInfo>(KEY_AUTH)
 }
 
-/** 身份预览切换（settings 页演示用）：切换后需 rebootstrap */
-export function setDevRole(role: 'user' | 'guest'): void {
-  Taro.setStorageSync(KEY_DEV_ROLE, role)
-}
-
-export function getDevRole(): 'user' | 'guest' {
+export function getDevRole(): 'user' | 'guest' | null {
   const r = Taro.getStorageSync(KEY_DEV_ROLE)
-  return r === 'guest' ? 'guest' : 'user'
+  return r === 'guest' ? 'guest' : r === 'user' ? 'user' : null
 }
 
 export function createStorageTransport(): Transport {
-  async function login(code: string): Promise<AuthInfo> {
+  async function login(_code: string, register: boolean): Promise<AuthInfo> {
     await delay()
     // stub：本地生成伪 openid（真实链路为后端 code2Session 换取）
     let openid = String(Taro.getStorageSync(KEY_OPENID) || '')
@@ -56,7 +51,20 @@ export function createStorageTransport(): Transport {
       openid = 'stub-' + uid()
       Taro.setStorageSync(KEY_OPENID, openid)
     }
-    const info: AuthInfo = { role: getDevRole(), openid }
+    // 注册制：register=true 正式建档；开发开关 kg-dev-role 可覆盖便于演示
+    const info: AuthInfo = { role: getDevRole() ?? (register ? 'user' : 'guest'), openid }
+    writeJSON(KEY_AUTH, info)
+    return info
+  }
+
+  async function upgrade(): Promise<AuthInfo> {
+    await delay()
+    const prev = getCachedAuth()
+    const info: AuthInfo = {
+      role: 'user',
+      openid: prev?.openid || String(Taro.getStorageSync(KEY_OPENID) || 'stub-' + uid()),
+      nickname: prev?.nickname,
+    }
     writeJSON(KEY_AUTH, info)
     return info
   }
@@ -83,9 +91,9 @@ export function createStorageTransport(): Transport {
     writeJSON(key, snapshot)
   }
 
-  async function getRewards(): Promise<GrantItem[]> {
+  async function getTasks(): Promise<TaskDef[]> {
     await delay(60)
-    return [] // stub：奖励由 B 端管理，Phase 4 走 GET /rewards
+    return [] // stub：任务由 B 端管理，Phase 4 走 GET /tasks（本地奖励池由 PRESET_REWARDS seed）
   }
 
   async function getGrants(): Promise<GrantItem[]> {
@@ -93,5 +101,5 @@ export function createStorageTransport(): Transport {
     return [] // stub：Phase 4 走 GET /grants（奶茶券弹窗数据流）
   }
 
-  return { login, getSnapshot, writeOps, getRewards, getGrants }
+  return { login, upgrade, getSnapshot, writeOps, getTasks, getGrants }
 }

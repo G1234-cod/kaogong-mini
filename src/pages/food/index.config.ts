@@ -1,1 +1,1 @@
-export default { navigationBarTitleText: '饮食推荐' }
+export default { navigationBarTitleText: '吃什么' }

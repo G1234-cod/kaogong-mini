@@ -1,1 +1,1 @@
-export default { navigationBarTitleText: '时政闪卡' }
+export default { navigationBarTitleText: '时政收集' }

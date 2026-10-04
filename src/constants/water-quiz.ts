@@ -371,3 +371,8 @@ export function pickWaterQuiz(): WaterQuiz {
   Taro.setStorageSync('last_water_quiz_id', String(q.id))
   return q
 }
+
+/** 按 id 取题（错题本复习用；题库静态不会删题，返回 null 仅作防御兜底） */
+export function quizById(id: number): WaterQuiz | null {
+  return WATER_QUIZ.find((q) => q.id === id) ?? null
+}

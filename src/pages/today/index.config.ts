@@ -1,1 +1,1 @@
-export default { navigationBarTitleText: '今日' }
+export default { navigationBarTitleText: '今日', usingComponents: {} }

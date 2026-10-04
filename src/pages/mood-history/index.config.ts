@@ -1,1 +1,1 @@
-export default { navigationBarTitleText: '心情回顾' }
+export default { navigationBarTitleText: '心情记录' }

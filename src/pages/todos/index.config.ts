@@ -1,1 +1,1 @@
-export default { navigationBarTitleText: '待办事项' }
+export default { navigationBarTitleText: '待办清单' }
